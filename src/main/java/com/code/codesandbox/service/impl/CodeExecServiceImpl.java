@@ -4,26 +4,20 @@ import com.code.codesandbox.pojo.CodeConfig;
 import com.code.codesandbox.pojo.CodeResult;
 import com.code.codesandbox.service.CodeExecService;
 import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.async.ResultCallbackTemplate;
-import com.github.dockerjava.api.command.CreateContainerResponse;
-import com.github.dockerjava.api.command.InspectExecResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
-import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
-import com.github.dockerjava.core.command.LogContainerResultCallback;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.net.URI;
+import java.io.*;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Created by Lxy on 2024/4/12 16:32
@@ -49,17 +43,15 @@ public class CodeExecServiceImpl implements CodeExecService {
 
         String containerId = dockerClient.createContainerCmd(javaImage.getId())
                 .withHostConfig(HostConfig.newHostConfig().withMemory(code.getMemory() * 1024L * 1024))
-                .withCmd("sh", "-c", "echo '" + code.getCode() + "' > Main.java && javac Main.java && java Main")
+                .withCmd("sh", "-c",
+                        "echo '" + code.getCode() + "' > Main.java && javac Main.java && /usr/bin/time -f \"%U:%K\" -o /home/consume.out java Main")
                 .withStopTimeout(30)
                 .exec()
                 .getId();
 
-        long startTime = System.currentTimeMillis();
         dockerClient.startContainerCmd(containerId).exec();
         // 捕获容器的输出
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-
-
 
         try {
             dockerClient.logContainerCmd(containerId)
@@ -81,17 +73,49 @@ public class CodeExecServiceImpl implements CodeExecService {
             e.printStackTrace();
         }
 
-        long endTime = System.currentTimeMillis();
+
+        String[] strings = readContainerFile(dockerClient, containerId, "/home/consume.out");
 
         dockerClient.removeContainerCmd(containerId).exec();
 
         return new CodeResult(
                 outputStream.toString(),
-                endTime - startTime,
-                0D
+                strings == null ? 0 : Double.parseDouble(strings[0]),
+                strings == null ? 0d : Double.parseDouble(strings[1])
         );
     }
 
+    /**
+     * 读取容器中的代码执行后的运行时间和内存消耗
+     * @param dockerClient
+     * @param containerId
+     * @param fileName
+     * @return
+     */
+    private String[] readContainerFile(DockerClient dockerClient, String containerId, String fileName) {
+        InputStream inputStream = dockerClient.copyArchiveFromContainerCmd(containerId, fileName)
+                .exec();
+        try (TarArchiveInputStream tarInputStream = new TarArchiveInputStream(inputStream)) {
+            TarArchiveEntry entry;
+            while ((entry = tarInputStream.getNextTarEntry()) != null) {
+                if (entry.isFile() && entry.getName().equals("consume.out")) {
+                    // 读取文件内容
+                    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = tarInputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+
+                    return outputStream.toString().split(":");
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return null;
+    }
     private Image findImage(List<Image> images, String imageName) {
         return images
                 .stream()

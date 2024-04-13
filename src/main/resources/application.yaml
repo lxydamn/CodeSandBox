@@ -2,5 +2,5 @@ server:
   port: 8888
 docker:
   api: "tcp://192.168.47.136:2375"
-  java-image: "amazoncorretto:17"
+  java-image: "javaimg:1"
 
