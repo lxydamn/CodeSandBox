@@ -32,6 +32,7 @@ public class CodeExecServiceImpl implements CodeExecService {
     @Override
     public CodeResult ExecJavaCode(CodeConfig code) throws IOException {
 
+        // 连接到Docker
         DockerClientConfig standard = DefaultDockerClientConfig.createDefaultConfigBuilder()
                 .withDockerHost(DOCKER_API)
                 .build();
@@ -41,15 +42,19 @@ public class CodeExecServiceImpl implements CodeExecService {
 
         Image javaImage = findImage(dockerClient.listImagesCmd().exec(), JAVA_IMAGE);
 
+        // 创建容器并设定内存限制和运行时间限制
         String containerId = dockerClient.createContainerCmd(javaImage.getId())
                 .withHostConfig(HostConfig.newHostConfig().withMemory(code.getMemory() * 1024L * 1024))
-                .withCmd("sh", "-c",
-                        "echo '" + code.getCode() + "' > Main.java && javac Main.java && /usr/bin/time -f \"%U:%K\" -o /home/consume.out java Main")
+                .withCmd("sh", "-c", "echo '"
+                        + code.getCode()
+                        + "' > Main.java && javac Main.java " //
+                        + " && /usr/bin/time -f \"%U:%K\" -o /home/consume.out java Main") //将程序消耗输入文件中
                 .withStopTimeout(30)
                 .exec()
                 .getId();
-
+        // 启动容器
         dockerClient.startContainerCmd(containerId).exec();
+
         // 捕获容器的输出
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
@@ -68,14 +73,15 @@ public class CodeExecServiceImpl implements CodeExecService {
                             }
                         }
                     })
-                    .awaitCompletion();
+                    .awaitCompletion(); // 等待容器运行结束
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
+        // 读取容器消耗
+        String[] strings = readContainerFile(dockerClient, containerId, "/home/consume.out", "consume.out");
 
-        String[] strings = readContainerFile(dockerClient, containerId, "/home/consume.out");
-
+        // 删除容器
         dockerClient.removeContainerCmd(containerId).exec();
 
         return new CodeResult(
@@ -92,13 +98,13 @@ public class CodeExecServiceImpl implements CodeExecService {
      * @param fileName
      * @return
      */
-    private String[] readContainerFile(DockerClient dockerClient, String containerId, String fileName) {
-        InputStream inputStream = dockerClient.copyArchiveFromContainerCmd(containerId, fileName)
+    private String[] readContainerFile(DockerClient dockerClient, String containerId, String filepath, String fileName) {
+        InputStream inputStream = dockerClient.copyArchiveFromContainerCmd(containerId, filepath)
                 .exec();
         try (TarArchiveInputStream tarInputStream = new TarArchiveInputStream(inputStream)) {
             TarArchiveEntry entry;
             while ((entry = tarInputStream.getNextTarEntry()) != null) {
-                if (entry.isFile() && entry.getName().equals("consume.out")) {
+                if (entry.isFile() && entry.getName().equals(fileName)) {
                     // 读取文件内容
                     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                     byte[] buffer = new byte[1024];
@@ -116,6 +122,13 @@ public class CodeExecServiceImpl implements CodeExecService {
 
         return null;
     }
+
+    /**
+     * 取出对应镜像
+     * @param images
+     * @param imageName
+     * @return
+     */
     private Image findImage(List<Image> images, String imageName) {
         return images
                 .stream()
