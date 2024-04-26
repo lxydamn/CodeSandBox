@@ -10,9 +10,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
-import java.util.Map;
-
 /**
  * Created by Lxy on 2024/4/12 15:36
  */
@@ -28,7 +25,7 @@ public class CodeExecController {
 
         try {
             return ResponseEntity.ok(codeExecService.ExecJavaCode(data));
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
 

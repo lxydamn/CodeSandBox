@@ -4,16 +4,21 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+
 /**
- * Created by Lxy on 2024/4/12 19:29
+ * code: user's code  <br/>
+ * memory: limit of memory  <br/>
+ * runtime: limit of the code execution time  <br/>
+ * 2024 4 26  <br/>
+ * written by lxy  <br/>
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 public class CodeConfig {
     private String code;
-    private String language;
     private Integer memory;
     private Integer runtime;
-
+    private String dockerApi;
+    private String dockerImage;
 }

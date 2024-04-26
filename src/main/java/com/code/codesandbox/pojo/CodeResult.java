@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class CodeResult {
+    private String execStatus;
     private String result;
     private Double runtime;
     private Double memory;
