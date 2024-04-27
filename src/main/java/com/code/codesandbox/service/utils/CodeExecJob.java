@@ -86,16 +86,25 @@ public class CodeExecJob implements Callable<CodeResult> {
 
 
         // 读取容器消耗
-        String fileContent = readContainerFile(
-                dockerClient,
-                containerId,
-                "/home/consume.out",
-                "consume.out");
+        String fileContent = null;
+        try {
+            fileContent = readContainerFile(
+                    dockerClient,
+                    containerId,
+                    "/home/consume.out",
+                    "consume.out");
+        } catch (Exception e) {
+            return new CodeResult(
+                    "code error",
+                    outputStream.toString(),
+                    0d,
+                    0d);
+        }
 
         String[] strings = null;
 
         if (fileContent != null) {
-            strings = fileContent.split(" ");
+            strings = fileContent.split(":");
         }
 
         // 删除容器
@@ -105,7 +114,7 @@ public class CodeExecJob implements Callable<CodeResult> {
                 "success",
                 outputStream.toString(),
                 strings == null ? 0 : Double.parseDouble(strings[0]),
-                strings == null ? 0d : Double.parseDouble(strings[1])
+                strings == null ? 0d : Double.parseDouble(strings[1]) / 1024
         );
     }
 
@@ -116,10 +125,12 @@ public class CodeExecJob implements Callable<CodeResult> {
      * @param fileName the file name
      * @return get output file content
      */
-    private String readContainerFile(DockerClient dockerClient, String containerId, String filepath, String fileName) {
+    private String readContainerFile(DockerClient dockerClient, String containerId, String filepath, String fileName) throws IOException {
+
         InputStream inputStream = dockerClient.copyArchiveFromContainerCmd(containerId, filepath)
                 .exec();
-        try (TarArchiveInputStream tarInputStream = new TarArchiveInputStream(inputStream)) {
+        TarArchiveInputStream tarInputStream = new TarArchiveInputStream(inputStream);
+
             TarArchiveEntry entry;
             while ((entry = tarInputStream.getNextTarEntry()) != null) {
                 if (entry.isFile() && entry.getName().equals(fileName)) {
@@ -134,10 +145,6 @@ public class CodeExecJob implements Callable<CodeResult> {
                     return outputStream.toString();
                 }
             }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
         return null;
     }
 

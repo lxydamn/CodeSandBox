@@ -8,7 +8,6 @@ class CodeSandBoxApplicationTests {
 
     @Test
     void contextLoads() {
-        String x = "a" + "b";
     }
 
 }

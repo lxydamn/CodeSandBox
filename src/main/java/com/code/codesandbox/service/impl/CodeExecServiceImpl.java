@@ -2,7 +2,9 @@ package com.code.codesandbox.service.impl;
 
 import com.code.codesandbox.pojo.CodeConfig;
 import com.code.codesandbox.pojo.CodeResult;
+import com.code.codesandbox.pojo.UserConfig;
 import com.code.codesandbox.service.CodeExecService;
+import com.code.codesandbox.service.utils.CodeExecJob;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallbackTemplate;
 import com.github.dockerjava.api.model.*;
@@ -18,6 +20,9 @@ import org.springframework.stereotype.Service;
 
 import java.io.*;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Created by Lxy on 2024/4/12 16:32
@@ -29,19 +34,46 @@ public class CodeExecServiceImpl implements CodeExecService {
     @Value("${docker.api}")
     private String DOCKER_API;
 
-    @Override
-    public CodeResult ExecJavaCode(CodeConfig code) throws IOException {
+    private static final ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            5,
+            100,
+            0,
+            java.util.concurrent.TimeUnit.MILLISECONDS,
+            new java.util.concurrent.LinkedBlockingQueue<>()
+    );
 
-        // 创建容器并设定内存限制和运行时间限制
-        String containerId = dockerClient.createContainerCmd(javaImage.getId())
-                .withHostConfig(HostConfig.newHostConfig().withMemory(code.getMemory() * 1024L * 1024))
-                .withCmd("sh", "-c", "echo '"
-                        + code.getCode()
-                        + "' > Main.java && javac Main.java " //
-                        + " && /usr/bin/time -f \"%U:%M\" -o /home/consume.out java Main") //将程序消耗输入文件中
-                .withStopTimeout(30)
-                .exec()
-                .getId();
+    @Override
+    public CodeResult ExecJavaCode(UserConfig config) throws ExecutionException, InterruptedException {
+
+        String[] cmd = new String[] {
+                "sh",
+                "-c",
+                "echo '"
+                        + config.getCode()
+                        + "' > Main.java "
+                        + "&& echo '"
+                        + config.getInput()
+                        + "' > input.in "
+                        + "&& javac Main.java"
+                        + " && /usr/bin/time -f \"%U:%X\" -o /home/consume.out java Main < input.in"
+        };
+
+        CodeConfig codeConfig = new CodeConfig(
+              config.getCode(),
+              config.getMemory(),
+              config.getRuntime(),
+              DOCKER_API,
+              JAVA_IMAGE
+        );
+
+        FutureTask<CodeResult> codeResult = new FutureTask<>(new CodeExecJob(
+                codeConfig,
+                cmd
+        ));
+
+        executor.submit(codeResult);
+
+        return codeResult.get();
     }
 
 }
